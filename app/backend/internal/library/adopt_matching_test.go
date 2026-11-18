@@ -26,6 +26,8 @@ func TestFolderNameMatchingNormalization(t *testing.T) {
 		{"[REC]", "[REC]", 0},
 		{"[REC] (2007)", "[REC]", 2007},
 		{"[REC] [1080p] (2007)", "[REC]", 2007},
+		{"[REC].2.(2009).[1080p]", "[REC] 2", 2009},
+		{"[1080p].[REC].(2007)", "[REC]", 2007},
 		{"Judge.Dredd.[ 1995 ].[1080p]", "Judge Dredd", 1995},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
