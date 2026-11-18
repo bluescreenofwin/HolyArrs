@@ -83,7 +83,7 @@ func candidateLookup(rel string) string {
 	if videoExt[strings.ToLower(path.Ext(n))] {
 		n = strings.TrimSuffix(n, path.Ext(n))
 	}
-	return n
+	return packLookup(rel, n)
 }
 
 func sampleVideo(name string) bool {
