@@ -1,12 +1,30 @@
 package library
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/HolyArrs/holyarrs/app/backend/internal/mediafiles"
 )
+
+func checkAdoptedOwner(ctx context.Context, db Reader, owner mediafiles.AdoptedFileOwner, tmdb string) error {
+	if !owner.Assigned {
+		return errors.New("this file is already recorded as an unassigned file; review it before importing")
+	}
+	id, err := TitleByTMDB(ctx, db, tmdb)
+	if err != nil {
+		return err
+	}
+	if id != owner.TitleID {
+		return errors.New("this file already belongs to another movie")
+	}
+	return nil
+}
 
 // collectionFiles recognizes distinct movies stored together, rather than
 // alternate encodes or discs of one movie. Unnamed videos stay folder-based.
@@ -43,13 +61,19 @@ func collectionEntries(ents []os.DirEntry, shared bool) []string {
 	return files
 }
 
-func sharedBelow(rel string, shared map[string]bool) bool {
+func sharedAncestors(shared map[string]bool) map[string]bool {
+	out := map[string]bool{}
 	for dir := range shared {
-		if dir == rel || strings.HasPrefix(dir, rel+"/") {
-			return true
+		for !out[dir] {
+			out[dir] = true
+			parent := path.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
 		}
 	}
-	return false
+	return out
 }
 
 // candidateLookup removes a video's extension before title parsing. Paths

@@ -49,7 +49,7 @@ func (s *Service) adoptFailed(ctx context.Context, lf mediafiles.LibraryFolder, 
 	var dup interface{ InLibrary() int64 }
 	if errors.As(err, &dup) {
 		fold := FoldsCase(lf.Path)
-		if owners, e := mediafiles.AdoptedFileOwners(ctx, s.Store.Read(), lf.ID, fold, r.Folder); e == nil && owners[FolderKey(r.Folder, fold)] == dup.InLibrary() {
+		if owners, e := mediafiles.AdoptedFileOwners(ctx, s.Store.Read(), lf.ID, fold, r.Folder); e == nil && owners[FolderKey(r.Folder, fold)].Assigned && owners[FolderKey(r.Folder, fold)].TitleID == dup.InLibrary() {
 			r.TitleID = dup.InLibrary()
 			r.File = r.Folder
 			return

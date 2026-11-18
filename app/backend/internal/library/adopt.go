@@ -306,8 +306,8 @@ func PlanAdoptFrom(ctx context.Context, db Reader, md metadata.Provider, folderI
 	if err != nil {
 		return p, err
 	}
-	for rel, id := range ownedFiles {
-		known[rel] = id
+	for rel, owner := range ownedFiles {
+		known[rel] = owner.TitleID
 	}
 	p.Warning = MountWarning(ctx, db, lf, len(ents))
 	// Movie folders may sit in letter, genre or collection folders.
@@ -519,8 +519,11 @@ func (s *Service) adoptOne(ctx context.Context, lf mediafiles.LibraryFolder, c A
 		if err != nil {
 			return 0, "", err
 		}
-		if id := owners[FolderKey(c.Folder, fold)]; id != 0 {
-			return id, c.Folder, nil
+		if owner := owners[FolderKey(c.Folder, fold)]; owner.TitleID != 0 {
+			if err := checkAdoptedOwner(ctx, s.Store.Read(), owner, c.TMDB); err != nil {
+				return 0, "", err
+			}
+			return owner.TitleID, c.Folder, nil
 		}
 	} else if len(collectionFiles(filepath.Join(lf.Path, c.Folder))) > 0 {
 		return 0, "", errors.New("this folder holds several movies; scan again and choose the individual files")
@@ -529,8 +532,10 @@ func (s *Service) adoptOne(ctx context.Context, lf mediafiles.LibraryFolder, c A
 	}
 	// A folder already in the Library (an import run again after a restart)
 	// counts as brought in, so its title is followed too.
-	if id, err := FolderTaken(ctx, s.Store.Read(), lf, c.Folder); !fileOnly && (err != nil || id != 0) {
-		return id, "", err
+	if !fileOnly {
+		if id, err := FolderTaken(ctx, s.Store.Read(), lf, c.Folder); err != nil || id != 0 {
+			return id, "", err
+		}
 	}
 	if s.Metadata == nil {
 		return 0, "", errors.New("no metadata source")

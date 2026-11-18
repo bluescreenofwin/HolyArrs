@@ -45,45 +45,55 @@ func movieFolders(root string, ents []os.DirEntry) []string {
 func movieCandidates(root string, ents []os.DirEntry, shared map[string]bool) []string {
 	// Group detection and walking inspect the same folders. Read each once,
 	// particularly on network shares where directory round trips are costly.
-	cache := map[string][]os.DirEntry{root: ents}
+	type listing struct {
+		entries []os.DirEntry
+		err     error
+	}
+	cache := map[string]listing{root: {entries: ents}}
 	read := func(dir string) ([]os.DirEntry, error) {
-		if es, ok := cache[dir]; ok {
-			return es, nil
+		if got, ok := cache[dir]; ok {
+			return got.entries, got.err
 		}
 		es, err := os.ReadDir(dir)
-		if err == nil {
-			cache[dir] = es
-		}
+		cache[dir] = listing{es, err}
 		return es, err
 	}
-	var out []string
+	out := collectionEntries(ents, shared["."])
+	ancestors := sharedAncestors(shared)
 	var walk func(rel string, ents []os.DirEntry, depth int)
 	walk = func(rel string, ents []os.DirEntry, depth int) {
 		for _, e := range ents {
-			if !ScanWants(e, "") || depth > 0 && !hasYearOrTag(e.Name()) && partFolder(e.Name()) {
-				continue
-			}
-			p := path.Join(rel, e.Name())
-			dir := filepath.Join(root, filepath.FromSlash(p))
-			subs, _ := read(dir)
-			if files := collectionEntries(subs, shared[p]); len(files) > 0 {
-				for _, f := range files {
-					out = append(out, path.Join(p, f))
+			func() {
+				// A completed top-level group will not be visited again. Do not
+				// retain every directory listing in the library until scan end.
+				if depth == 0 {
+					defer func() { clear(cache) }()
 				}
-				if depth < maxGroupDepth {
+				if !ScanWants(e, "") || depth > 0 && !hasYearOrTag(e.Name()) && partFolder(e.Name()) {
+					return
+				}
+				p := path.Join(rel, e.Name())
+				dir := filepath.Join(root, filepath.FromSlash(p))
+				subs, _ := read(dir)
+				if files := collectionEntries(subs, shared[p]); len(files) > 0 {
+					for _, f := range files {
+						out = append(out, path.Join(p, f))
+					}
+					if depth < maxGroupDepth {
+						walk(p, subs, depth+1)
+					}
+					return
+				}
+				if ancestors[p] && depth < maxGroupDepth {
 					walk(p, subs, depth+1)
+					return
 				}
-				continue
-			}
-			if sharedBelow(p, shared) {
-				walk(p, subs, depth+1)
-				continue
-			}
-			if subs, ok := groupOfRead(dir, e.Name(), depth, read); ok {
-				walk(p, subs, depth+1)
-				continue
-			}
-			out = append(out, p)
+				if subs, ok := groupOfRead(dir, e.Name(), depth, read); ok {
+					walk(p, subs, depth+1)
+					return
+				}
+				out = append(out, p)
+			}()
 		}
 	}
 	walk("", ents, 0)

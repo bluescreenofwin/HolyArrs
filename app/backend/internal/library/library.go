@@ -265,8 +265,14 @@ func AddMovie(ctx context.Context, s *database.Store, m metadata.Movie, opt AddO
 			if err != nil {
 				return err
 			}
-			if id := owners[FolderKey(opt.Adopt.File, fold)]; id != 0 {
-				return &AlreadyAddedError{TitleID: id}
+			if owner := owners[FolderKey(opt.Adopt.File, fold)]; owner.TitleID != 0 {
+				if err := checkAdoptedOwner(ctx, tx, owner, tmdbID); err != nil {
+					return err
+				}
+				return &AlreadyAddedError{TitleID: owner.TitleID}
+			}
+			if err := mediafiles.ShareMovieAncestors(ctx, tx, lf.ID, opt.Adopt.FolderName, fold); err != nil {
+				return err
 			}
 		}
 		if id, err := TitleByTMDB(ctx, tx, tmdbID); err != nil {
