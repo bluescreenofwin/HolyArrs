@@ -11,7 +11,7 @@ import (
 
 // maxGroupDepth is how many grouping folders (letters, genres,
 // collections) a movie folder may sit under.
-const maxGroupDepth = 3
+const maxGroupDepth = 16
 
 // reDiscFolder is a numbered disc or part folder: "Disc 1", "cd2",
 // "Part 2", "Disc 1 - Feature".
@@ -22,7 +22,7 @@ var extrasFolders = map[string]bool{"extras": true, "extra": true, "bonus": true
 	"behind the scenes": true, "deleted scenes": true, "featurettes": true, "featurette": true, "specials": true,
 	"special features": true, "samples": true, "sample": true, "trailers": true, "trailer": true, "interviews": true,
 	"subs": true, "subtitles": true, "feature": true, "other": true, "others": true, "bdmv": true, "video ts": true,
-	"audio ts": true, "certificate": true, "backup": true}
+	"audio ts": true, "certificate": true, "backup": true, "images": true, "screenshots": true, "cover art screens": true}
 
 // partFolder says a subfolder belongs to the movie folder around it
 // (extras, discs, bonus material) rather than being a movie of its own.
@@ -33,14 +33,29 @@ func partFolder(name string) bool {
 		}
 		return r
 	}, strings.ToLower(name))), " ")
-	return extrasFolders[n] || reDiscFolder.MatchString(n)
+	return extrasFolders[n] || reDiscFolder.MatchString(n) || strings.HasPrefix(n, "subtitles ")
 }
 
-// movieFolders lists the movie folders of a Library folder as paths
-// under it, sorted. A folder with no year in its name, no video directly
-// in it and folders of its own groups movies, and its folders are read in
-// its place; it is never offered as a movie.
+// movieFolders lists movie folders and individual collection videos as
+// relative paths, sorted. Grouping folders are replaced by their contents.
 func movieFolders(root string, ents []os.DirEntry) []string {
+	return movieCandidates(root, ents, nil)
+}
+
+func movieCandidates(root string, ents []os.DirEntry, shared map[string]bool) []string {
+	// Group detection and walking inspect the same folders. Read each once,
+	// particularly on network shares where directory round trips are costly.
+	cache := map[string][]os.DirEntry{root: ents}
+	read := func(dir string) ([]os.DirEntry, error) {
+		if es, ok := cache[dir]; ok {
+			return es, nil
+		}
+		es, err := os.ReadDir(dir)
+		if err == nil {
+			cache[dir] = es
+		}
+		return es, err
+	}
 	var out []string
 	var walk func(rel string, ents []os.DirEntry, depth int)
 	walk = func(rel string, ents []os.DirEntry, depth int) {
@@ -49,7 +64,22 @@ func movieFolders(root string, ents []os.DirEntry) []string {
 				continue
 			}
 			p := path.Join(rel, e.Name())
-			if subs, ok := groupOf(filepath.Join(root, filepath.FromSlash(p)), e.Name(), depth); ok {
+			dir := filepath.Join(root, filepath.FromSlash(p))
+			subs, _ := read(dir)
+			if files := collectionEntries(subs, shared[p]); len(files) > 0 {
+				for _, f := range files {
+					out = append(out, path.Join(p, f))
+				}
+				if depth < maxGroupDepth {
+					walk(p, subs, depth+1)
+				}
+				continue
+			}
+			if sharedBelow(p, shared) {
+				walk(p, subs, depth+1)
+				continue
+			}
+			if subs, ok := groupOfRead(dir, e.Name(), depth, read); ok {
 				walk(p, subs, depth+1)
 				continue
 			}
@@ -66,10 +96,14 @@ func movieFolders(root string, ents []os.DirEntry) []string {
 // two or more holding their own videos. Disc, extras and bonus folders
 // never count, so a movie with its videos only in those stays whole.
 func groupOf(dir, name string, depth int) ([]os.DirEntry, bool) {
-	if depth >= maxGroupDepth || hasYearOrTag(name) {
+	return groupOfRead(dir, name, depth, os.ReadDir)
+}
+
+func groupOfRead(dir, name string, depth int, read func(string) ([]os.DirEntry, error)) ([]os.DirEntry, bool) {
+	if depth >= maxGroupDepth || hasYearOrTag(name) && !collectionName(name) {
 		return nil, false
 	}
-	ents, err := os.ReadDir(dir)
+	ents, err := read(dir)
 	if err != nil {
 		return nil, false
 	}
@@ -90,14 +124,25 @@ func groupOf(dir, name string, depth int) ([]os.DirEntry, bool) {
 			continue
 		}
 		sub := filepath.Join(dir, e.Name())
-		if _, ok := groupOf(sub, e.Name(), depth+1); ok {
+		subEntries, _ := read(sub)
+		if len(collectionEntries(subEntries, false)) > 0 {
 			return ents, true
 		}
-		if videoIn(sub) {
+		if _, ok := groupOfRead(sub, e.Name(), depth+1, read); ok {
+			return ents, true
+		}
+		if entriesHaveVideo(subEntries) {
 			withVideo++
 		}
 	}
 	return ents, withVideo >= 2
+}
+
+// A year range on a collection describes its contents, not one movie.
+var collectionYears = regexp.MustCompile(`(?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}`)
+
+func collectionName(name string) bool {
+	return collectionYears.MatchString(name) || strings.Contains(strings.ToLower(name), "collection")
 }
 
 func hasYearOrTag(name string) bool {
@@ -105,9 +150,7 @@ func hasYearOrTag(name string) bool {
 	return year != 0 || reTMDBTag.MatchString(name)
 }
 
-// videoIn says a folder holds a video directly.
-func videoIn(dir string) bool {
-	ents, _ := os.ReadDir(dir)
+func entriesHaveVideo(ents []os.DirEntry) bool {
 	for _, e := range ents {
 		if !e.IsDir() && videoExt[strings.ToLower(filepath.Ext(e.Name()))] {
 			return true

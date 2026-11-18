@@ -2,7 +2,6 @@ package library
 
 import (
 	"context"
-	"path"
 	"strconv"
 	"strings"
 
@@ -71,7 +70,7 @@ func startAhead(ctx context.Context, md metadata.Provider, folders []string) *sc
 				end := min(len(folders), (w+1)*scanWindow)
 				reads := make([]metadata.TMDBRead, 0, end-w*scanWindow)
 				for _, f := range folders[w*scanWindow : end] {
-					reads = append(reads, folderRead(path.Base(f)))
+					reads = append(reads, folderRead(candidateLookup(f)))
 				}
 				p.Prefetch(ctx, reads)
 			}

@@ -79,10 +79,11 @@ type AddOptions struct {
 // the Version takes the folder's name as it is, and its main video (if
 // any) becomes an adopted File. Nothing on disk changes.
 type Adoption struct {
-	FolderName string
-	File       string // relative to the Library folder; "" when there is none
-	Size       int64
-	MediaInfo  map[string]any
+	FolderName   string
+	SharedFolder bool
+	File         string // relative to the Library folder; "" when there is none
+	Size         int64
+	MediaInfo    map[string]any
 }
 
 // GateDefaults are the Release gate settings for new movies.
@@ -257,7 +258,17 @@ func AddMovie(ctx context.Context, s *database.Store, m metadata.Movie, opt AddO
 	unlock := s.LockFiles()
 	defer unlock()
 	var titleID int64
+	fold := FoldsCase(lf.Path)
 	err = s.Write(ctx, func(tx *sql.Tx) error {
+		if opt.Adopt != nil && opt.Adopt.SharedFolder {
+			owners, err := mediafiles.AdoptedFileOwners(ctx, tx, lf.ID, fold, opt.Adopt.File)
+			if err != nil {
+				return err
+			}
+			if id := owners[FolderKey(opt.Adopt.File, fold)]; id != 0 {
+				return &AlreadyAddedError{TitleID: id}
+			}
+		}
 		if id, err := TitleByTMDB(ctx, tx, tmdbID); err != nil {
 			return err
 		} else if id != 0 {
@@ -322,6 +333,9 @@ func AddMovie(ctx context.Context, s *database.Store, m metadata.Movie, opt AddO
 		}
 		v := &mediafiles.Version{TitleID: t.ID, Label: MainLabel(opt.MainFourK), PickRulesID: prID, LibraryFolderID: lf.ID,
 			FolderName: folderName, KeepUpToDate: keep, IsMain: true, FourK: opt.MainFourK}
+		if opt.Adopt != nil {
+			v.SharedFolder = opt.Adopt.SharedFolder
+		}
 		if _, err := database.Insert(tx, "versions", v, by); err != nil {
 			return err
 		}

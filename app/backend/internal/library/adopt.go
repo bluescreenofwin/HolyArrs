@@ -294,12 +294,24 @@ func PlanAdoptFrom(ctx context.Context, db Reader, md metadata.Provider, folderI
 		return p, err
 	}
 	fold := FoldsCase(lf.Path)
+	shared := map[string]bool{}
 	for _, v := range vs {
-		known[FolderKey(v.FolderName, fold)] = v.TitleID
+		if !v.SharedFolder {
+			known[FolderKey(v.FolderName, fold)] = v.TitleID
+		} else {
+			shared[v.FolderName] = true
+		}
+	}
+	ownedFiles, err := mediafiles.AdoptedFileOwners(ctx, db, lf.ID, fold, "")
+	if err != nil {
+		return p, err
+	}
+	for rel, id := range ownedFiles {
+		known[rel] = id
 	}
 	p.Warning = MountWarning(ctx, db, lf, len(ents))
 	// Movie folders may sit in letter, genre or collection folders.
-	all := movieFolders(lf.Path, ents)
+	all := movieCandidates(lf.Path, ents, shared)
 	todo := afterIn(all, after)
 	p.Offset, p.Total = len(all)-len(todo), len(all)
 	total := min(len(todo), p.Limit)
@@ -312,7 +324,7 @@ func PlanAdoptFrom(ctx context.Context, db Reader, md metadata.Provider, folderI
 			break
 		}
 		ReportScan(ctx, len(p.Folders), total)
-		c := AdoptCandidate{Folder: name, Videos: listVideos(lf.Path, name), Others: []AdoptMatch{}}
+		c := AdoptCandidate{Folder: name, Videos: candidateVideos(lf.Path, name), Others: []AdoptMatch{}}
 		if len(c.Videos) > 0 {
 			c.Main = c.Videos[0].Path
 		}
@@ -323,7 +335,7 @@ func PlanAdoptFrom(ctx context.Context, db Reader, md metadata.Provider, folderI
 			continue
 		}
 		ahead.wait(ctx, name)
-		name, year, ms, err := matchFolder(ctx, md, path.Base(name))
+		name, year, ms, err := matchFolder(ctx, md, candidateLookup(name))
 		if err != nil {
 			if ctx.Err() != nil {
 				return p, ctx.Err()
@@ -424,7 +436,7 @@ func ReportScan(ctx context.Context, done, total int) {
 	}
 }
 
-// AdoptChoice is one folder to adopt as one movie.
+// AdoptChoice is a movie folder or an individual video in a collection.
 type AdoptChoice struct {
 	Folder string `json:"folder"`
 	TMDB   string `json:"tmdb_id,omitempty"`
@@ -450,8 +462,8 @@ type AdoptResult struct {
 	Unknown  []string `json:"unknown,omitempty"`
 }
 
-// Adopt adds each chosen folder as a movie with its folder as it is; its
-// biggest video becomes an adopted File. No file is moved, renamed or
+// Adopt adds each chosen folder or collection video as a movie in place.
+// A folder's biggest video becomes its File. No file is moved, renamed or
 // written. One bad choice does not stop the others.
 func (s *Service) Adopt(ctx context.Context, folderID int64, choices []AdoptChoice, by domain.Actor) ([]AdoptResult, error) {
 	var lf mediafiles.LibraryFolder
@@ -493,12 +505,31 @@ func (s *Service) adoptOne(ctx context.Context, lf mediafiles.LibraryFolder, c A
 	if !validFolder(c.Folder) {
 		return 0, "", errors.New("the folder must be one folder directly in the Library folder")
 	}
-	if fi, err := os.Lstat(filepath.Join(lf.Path, c.Folder)); err != nil || !fi.IsDir() || !importer.InsideRealFile(lf.Path, filepath.Join(lf.Path, c.Folder)) {
+	fi, err := os.Lstat(filepath.Join(lf.Path, c.Folder))
+	if err != nil || !importer.InsideRealFile(lf.Path, filepath.Join(lf.Path, c.Folder)) {
 		return 0, "", errors.New("no such folder in the Library folder")
+	}
+	fileOnly := fi.Mode().IsRegular() && videoExt[strings.ToLower(path.Ext(c.Folder))] && !sampleVideo(path.Base(c.Folder))
+	if !fi.IsDir() && !fileOnly {
+		return 0, "", errors.New("choose a movie folder or a video file")
+	}
+	if fileOnly {
+		fold := FoldsCase(lf.Path)
+		owners, err := mediafiles.AdoptedFileOwners(ctx, s.Store.Read(), lf.ID, fold, c.Folder)
+		if err != nil {
+			return 0, "", err
+		}
+		if id := owners[FolderKey(c.Folder, fold)]; id != 0 {
+			return id, c.Folder, nil
+		}
+	} else if len(collectionFiles(filepath.Join(lf.Path, c.Folder))) > 0 {
+		return 0, "", errors.New("this folder holds several movies; scan again and choose the individual files")
+	} else if _, grouped := groupOf(filepath.Join(lf.Path, c.Folder), path.Base(c.Folder), 0); grouped {
+		return 0, "", errors.New("this folder groups movies; scan again and choose its contents")
 	}
 	// A folder already in the Library (an import run again after a restart)
 	// counts as brought in, so its title is followed too.
-	if id, err := FolderTaken(ctx, s.Store.Read(), lf, c.Folder); err != nil || id != 0 {
+	if id, err := FolderTaken(ctx, s.Store.Read(), lf, c.Folder); !fileOnly && (err != nil || id != 0) {
 		return id, "", err
 	}
 	if s.Metadata == nil {
@@ -508,8 +539,11 @@ func (s *Service) adoptOne(ctx context.Context, lf mediafiles.LibraryFolder, c A
 	if err != nil {
 		return 0, "", fmt.Errorf("TMDB %s: %w", c.TMDB, err)
 	}
-	a := &Adoption{FolderName: c.Folder}
-	if vids := listVideos(lf.Path, c.Folder); len(vids) > 0 {
+	a := &Adoption{FolderName: c.Folder, SharedFolder: fileOnly}
+	if fileOnly {
+		a.FolderName = path.Dir(c.Folder)
+	}
+	if vids := candidateVideos(lf.Path, c.Folder); len(vids) > 0 {
 		a.File, a.Size = vids[0].Path, vids[0].Size
 	}
 	id, err := AddMovie(ctx, s.Store, m, AddOptions{LibraryFolderID: lf.ID, WhyAdded: "import", Adopt: a,
