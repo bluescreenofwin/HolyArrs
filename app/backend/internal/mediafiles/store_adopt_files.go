@@ -57,11 +57,14 @@ func AdoptedFileOwners(ctx context.Context, db database.Lister, libraryFolderID 
 // movies once a file inside that folder has been adopted independently.
 func ShareMovieAncestors(ctx context.Context, tx *sql.Tx, libraryFolderID int64, folder string, fold bool) error {
 	for dir := folder; ; dir = path.Dir(dir) {
-		column, value := "folder_name", dir
-		if fold {
-			column, value = "lower(folder_name)", strings.ToLower(dir)
+		query := `UPDATE versions SET shared_folder = 1 WHERE shared_folder = 0
+			AND library_folder_id = ? AND lower(folder_name) = lower(?)`
+		args := []any{libraryFolderID, dir}
+		if !fold {
+			query += " AND folder_name = ?"
+			args = append(args, dir)
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE versions SET shared_folder = 1 WHERE library_folder_id = ? AND "+column+" = ?", libraryFolderID, value); err != nil {
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return err
 		}
 		if dir == "." || path.Dir(dir) == dir {

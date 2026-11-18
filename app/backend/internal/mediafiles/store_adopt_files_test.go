@@ -41,4 +41,10 @@ func TestAdoptedFileLookupUsesPathIndex(t *testing.T) {
 	if !strings.Contains(after, "SEARCH f USING INDEX files_active_path") {
 		t.Fatalf("single-file adoption scans the catalog: %s", after)
 	}
+	parents := plan(`UPDATE versions SET shared_folder = 1 WHERE shared_folder = 0
+		AND library_folder_id = ? AND lower(folder_name) = lower(?) AND folder_name = ?`, 1, "Collection", "Collection")
+	t.Logf("parent conversion: %s", parents)
+	if !strings.Contains(parents, "SEARCH versions USING INDEX versions_exclusive_folder") {
+		t.Fatalf("parent conversion scans the catalog: %s", parents)
+	}
 }
