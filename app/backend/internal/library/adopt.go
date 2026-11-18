@@ -219,9 +219,10 @@ var ReFolderYear = regexp.MustCompile(`^(.+?)[\s._-]*[(\[]?((?:18|19|20)\d{2})[)
 // folderName reads "Name (Year)" and its usual variants from a folder
 // name; a release-style name goes through the release parser.
 func FolderName(s string) (string, int) {
+	s = matchingFolderName(s)
 	if m := ReFolderYear.FindStringSubmatch(s); m != nil {
 		y, _ := strconv.Atoi(m[2])
-		return strings.Trim(m[1], " -._(["), y
+		return strings.Trim(m[1], " -._"), y
 	}
 	p := releasename.Parse(s, releasename.Hints{})
 	if p.Title.Value != "" && p.Year.Value != 0 {
