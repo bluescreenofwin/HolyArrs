@@ -219,14 +219,20 @@ var ReFolderYear = regexp.MustCompile(`^(.+?)[\s._-]*[(\[]?((?:18|19|20)\d{2})[)
 // folderName reads "Name (Year)" and its usual variants from a folder
 // name; a release-style name goes through the release parser.
 func FolderName(s string) (string, int) {
+	releaseEvidence := folderReleaseWords.MatchString(releaseDelimiters.Replace(s))
 	s = matchingFolderName(s)
 	if m := ReFolderYear.FindStringSubmatch(s); m != nil {
 		y, _ := strconv.Atoi(m[2])
-		return strings.Trim(m[1], " -._"), y
+		return cleanReleaseTitle(strings.Trim(m[1], " -._"), releaseEvidence), y
 	}
 	p := releasename.Parse(s, releasename.Hints{})
 	if p.Title.Value != "" && p.Year.Value != 0 {
 		return p.Title.Value, p.Year.Value
+	}
+	// A release parser may reject an edition before the year. Recover only
+	// with a single year and a technical tail, never from a bare numeric title.
+	if title, year := packReleaseFacts(s); year != 0 {
+		return cleanReleaseTitle(strings.ReplaceAll(title, "_", " "), true), year
 	}
 	return strings.Trim(s, " -._"), 0
 }
@@ -332,6 +338,13 @@ func PlanAdoptFrom(ctx context.Context, db Reader, md metadata.Provider, folderI
 		}
 		if id, ok := known[FolderKey(name, fold)]; ok {
 			c.Status, c.Why, c.TitleID = "in_library", "this folder already belongs to a movie in the Library", id
+			p.Folders = append(p.Folders, c)
+			p.Counts[c.Status]++
+			continue
+		}
+		if collectionName(path.Base(name)) && len(c.Videos) == 0 {
+			c.ParsedName = path.Base(name)
+			c.Status, c.Why = "no_video", "No movie video found in this collection; samples and subtitles do not count."
 			p.Folders = append(p.Folders, c)
 			p.Counts[c.Status]++
 			continue

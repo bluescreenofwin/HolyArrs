@@ -150,9 +150,10 @@ func groupOfRead(dir, name string, depth int, read func(string) ([]os.DirEntry, 
 
 // A year range on a collection describes its contents, not one movie.
 var collectionYears = regexp.MustCompile(`(?:19|20)\d{2}\s*[-–]\s*(?:19|20)\d{2}`)
+var collectionWords = regexp.MustCompile(`(?i)\b(?:collection|trilogy|quadrilogy|anthology)\b`)
 
 func collectionName(name string) bool {
-	return collectionYears.MatchString(name) || strings.Contains(strings.ToLower(name), "collection")
+	return collectionYears.MatchString(name) || strings.Contains(strings.ToLower(name), "collection") || collectionWords.MatchString(strings.ReplaceAll(name, "_", " "))
 }
 
 func hasYearOrTag(name string) bool {

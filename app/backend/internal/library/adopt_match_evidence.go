@@ -35,6 +35,27 @@ func takeEvidenceRequest(budget *int) bool {
 
 func matchCandidateWithBudget(ctx context.Context, md metadata.Provider, rel string, budget *int) (string, int, []AdoptMatch, error) {
 	name, year, matches, err := matchFolder(ctx, md, candidateLookup(rel))
+	// A release without a year can contain a franchise prefix. Offer a
+	// bounded suffix suggestion only after the full query found nothing;
+	// never promote this heuristic to an automatic match.
+	if err == nil && year == 0 && len(matches) == 0 && !reTMDBTag.MatchString(rel) && hasTechnicalParentheses(path.Base(rel)) {
+		words := strings.Fields(name)
+		if len(words) >= 5 && takeEvidenceRequest(budget) {
+			query := strings.Join(words[1:], " ")
+			movies, e := md.Search(ctx, query, 0)
+			if e != nil {
+				return name, year, matches, e
+			}
+			for _, m := range movies {
+				if m.IDs["tmdb"] != "" && sameMovieName(query, m.Name) {
+					matches = append(matches, AdoptMatch{TMDB: m.IDs["tmdb"], Name: m.Name, Year: m.Year, Score: 0.8, Poster: m.Poster})
+				}
+			}
+			if len(matches) > 4 {
+				matches = matches[:4]
+			}
+		}
+	}
 	pack := collectionPackPath(rel)
 	yearFirst := yearFirstRelease.MatchString(path.Base(rel))
 	if err != nil || year == 0 || (!pack && !yearFirst) || reTMDBTag.MatchString(rel) {
