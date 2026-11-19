@@ -33,5 +33,17 @@ func packLookup(rel, name string) string {
 			}
 		}
 	}
+	if collectionPackPath(rel) {
+		title = cleanPackEdition(title)
+	}
 	return title + " (" + m[2] + ")"
+}
+
+func collectionPackPath(rel string) bool {
+	for dir := path.Dir(rel); dir != "." && dir != "/"; dir = path.Dir(dir) {
+		if collectionName(path.Base(dir)) {
+			return true
+		}
+	}
+	return false
 }

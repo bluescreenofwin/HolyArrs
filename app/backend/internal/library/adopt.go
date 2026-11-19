@@ -319,6 +319,7 @@ func PlanAdoptFrom(ctx context.Context, db Reader, md metadata.Provider, folderI
 	defer func() { ReportScan(ctx, len(p.Folders), total) }()
 	ahead := startAhead(ctx, md, scanLookups(todo, p.Limit, known, fold))
 	defer ahead.close()
+	evidenceBudget := scanEvidenceRequests
 	for _, name := range todo {
 		if len(p.Folders) >= p.Limit {
 			p.More, p.Next = true, p.Folders[len(p.Folders)-1].Folder
@@ -336,7 +337,7 @@ func PlanAdoptFrom(ctx context.Context, db Reader, md metadata.Provider, folderI
 			continue
 		}
 		ahead.wait(ctx, name)
-		name, year, ms, err := matchFolder(ctx, md, candidateLookup(name))
+		name, year, ms, err := matchCandidateWithBudget(ctx, md, name, &evidenceBudget)
 		if err != nil {
 			if ctx.Err() != nil {
 				return p, ctx.Err()

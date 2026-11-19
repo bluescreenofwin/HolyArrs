@@ -29,7 +29,7 @@ func TestCollectionPackLookup(t *testing.T) {
 		{"Final Destination Complete 5 Movie Collection/02 Final Destination 2 - Horror 2003 Eng Rus Subs 720p.mp4", "Final Destination 2", 2003},
 		{"Final Destination Complete 5 Movie Collection/03 Final Destination 3 - Horror 2006 Eng Rus Subs 720p.mp4", "Final Destination 3", 2006},
 		{"Final Destination Complete 5 Movie Collection/05 Final Destination 5 - Horror 2011 Eng Rus Subs 720p.mp4", "Final Destination 5", 2011},
-		{"Alien Collection/Alien Directors Cut - Sci-Fi 1979 Eng Subs 720p [H264-mp4].mp4", "Alien Directors Cut", 1979},
+		{"Alien Collection/Alien Directors Cut - Sci-Fi 1979 Eng Subs 720p [H264-mp4].mp4", "Alien", 1979},
 		{"Collection/101 Dalmatians - Animation 1961 1080p.mkv", "101 Dalmatians", 1961},
 		{"Collection/12 Monkeys - Sci-Fi 1995 1080p.mkv", "12 Monkeys", 1995},
 		{"12 Monkeys Collection/12 Monkeys - Sci-Fi 1995 1080p.mkv", "12 Monkeys", 1995},
