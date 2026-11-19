@@ -113,9 +113,11 @@ func matchCandidateWithBudget(ctx context.Context, md metadata.Provider, rel str
 			verified = true
 		}
 	}
-	for _, director := range detail.Directors {
-		if director != "" && sameMovieName(name, detail.Name+" "+director) {
-			verified = true
+	for _, credits := range [][]string{detail.Directors, detail.People} {
+		for _, person := range credits {
+			if person != "" && sameMovieName(name, detail.Name+" "+person) {
+				verified = true
+			}
 		}
 	}
 	if verified {

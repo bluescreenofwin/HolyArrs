@@ -49,6 +49,9 @@ func collectionEntries(ents []os.DirEntry, shared bool) []string {
 		}
 		files = append(files, e.Name())
 		name, year := FolderName(candidateLookup(e.Name()))
+		if year == 0 {
+			name, year = packReleaseFacts(strings.TrimSuffix(e.Name(), path.Ext(e.Name())))
+		}
 		if !shared && (year == 0 || name == "") {
 			continue
 		}
@@ -83,7 +86,7 @@ func candidateLookup(rel string) string {
 	if videoExt[strings.ToLower(path.Ext(n))] {
 		n = strings.TrimSuffix(n, path.Ext(n))
 	}
-	return packLookup(rel, yearFirstLookup(n))
+	return numberedPackLookup(rel, packLookup(rel, yearFirstLookup(n)))
 }
 
 func sampleVideo(name string) bool {

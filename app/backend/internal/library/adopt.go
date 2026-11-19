@@ -336,6 +336,14 @@ func PlanAdoptFrom(ctx context.Context, db Reader, md metadata.Provider, folderI
 			p.Counts[c.Status]++
 			continue
 		}
+		if possibleCollectionPack(name, c.Videos) {
+			c.Main = ""
+			c.ParsedName = path.Base(name)
+			c.Status, c.Why = "unmatched", "Possible collection pack: review its contents and import individual movie files."
+			p.Folders = append(p.Folders, c)
+			p.Counts[c.Status]++
+			continue
+		}
 		ahead.wait(ctx, name)
 		name, year, ms, err := matchCandidateWithBudget(ctx, md, name, &evidenceBudget)
 		if err != nil {
@@ -531,6 +539,8 @@ func (s *Service) adoptOne(ctx context.Context, lf mediafiles.LibraryFolder, c A
 		return 0, "", errors.New("this folder holds several movies; scan again and choose the individual files")
 	} else if _, grouped := groupOf(filepath.Join(lf.Path, c.Folder), path.Base(c.Folder), 0); grouped {
 		return 0, "", errors.New("this folder groups movies; scan again and choose its contents")
+	} else if collectionName(path.Base(c.Folder)) && possibleCollectionPack(c.Folder, candidateVideos(lf.Path, c.Folder)) {
+		return 0, "", errors.New("possible collection pack; review its contents and import individual movie files")
 	}
 	// A folder already in the Library (an import run again after a restart)
 	// counts as brought in, so its title is followed too.
