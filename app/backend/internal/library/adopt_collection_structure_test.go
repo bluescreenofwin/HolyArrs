@@ -107,3 +107,18 @@ func TestPackLooseMoviesAndDiscsStillGuarded(t *testing.T) {
 		t.Fatal("disc bypassed guard for loose movies")
 	}
 }
+
+func TestYearFirstCollectionDiscovery(t *testing.T) {
+	root := t.TempDir()
+	for _, f := range []string{"Example Trilogy/2000.Example.One.1920x1080.BDRip.mkv", "Example Trilogy/2002.Example.Two.1920x1080.BDRip.mkv", "Example Trilogy/2004.Example.Three.1920x1080.BDRip.mkv"} {
+		writeFile(t, filepath.Join(root, f), "video")
+	}
+	es, _ := os.ReadDir(root)
+	got := movieCandidates(root, es, nil)
+	if len(got) != 3 {
+		t.Fatalf("year-first pack: %q", got)
+	}
+	if _, y := collectionReleaseFacts("2001.A.Space.Odyssey.1968.1920x1080.BDRip"); y != 0 {
+		t.Fatal("numeric title mistaken for year")
+	}
+}
